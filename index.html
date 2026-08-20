@@ -1817,7 +1817,7 @@ function kgShowTooltip(e,type,id){
 
   if(type==='course'){
     contentHtml='<div class="tt-desc">48学时 · 12模块 · 48课时 · 96核心术语<br>三大写作模式：Informing / Predicting / Persuading<br>核心框架：IRAC / CREAC</div>';
-    learnLink='<div class="tt-link" onclick="goToPage(\'page-study\');kgHideTooltip();">📖 开始学习 →</div>';
+    learnLink='<div class="tt-link" onclick="goToPage(\'study\');kgHideTooltip();">📖 开始学习 →</div>';
   }
   else if(type==='module'){
     var modId=node.id;
@@ -1870,17 +1870,23 @@ function kgShowTooltip(e,type,id){
   tooltip.style.top=(e.clientY+18)+'px';
 
   var rect=tooltip.getBoundingClientRect();
+  var left=e.clientX+18;
+  var top=e.clientY+18;
   if(rect.right>window.innerWidth-10){
-    tooltip.style.left=(e.clientX-rect.width-18)+'px';
+    left=e.clientX-rect.width-18;
   }
+  if(left<10){left=10;}
   if(rect.bottom>window.innerHeight-10){
-    tooltip.style.top=(e.clientY-rect.height-18)+'px';
+    top=e.clientY-rect.height-18;
   }
+  if(top<10){top=10;}
+  tooltip.style.left=left+'px';
+  tooltip.style.top=top+'px';
 }
 
 function kgGoToModule(modId){
   kgHideTooltip();
-  goToPage('page-study');
+  goToPage('study');
   document.getElementById('moduleFilter').value=modId;
   renderStudyContent();
   setTimeout(function(){
@@ -1890,7 +1896,7 @@ function kgGoToModule(modId){
 
 function kgGoToLecture(hour){
   kgHideTooltip();
-  goToPage('page-study');
+  goToPage('study');
   var lec=courseData.lectures.find(function(l){return l.hour===hour;});
   if(lec){
     document.getElementById('moduleFilter').value=lec.mod;
@@ -1899,7 +1905,7 @@ function kgGoToLecture(hour){
   setTimeout(function(){
     var item=document.querySelector('[data-hour="'+hour+'"]');
     if(item)item.scrollIntoView({behavior:'smooth',block:'center'});
-  },200);
+  },300);
 }
 
 function kgHideTooltip(){
