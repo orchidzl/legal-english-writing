@@ -415,10 +415,19 @@ h1,h2,h3,h4{font-family:'Georgia','Times New Roman',serif;}
   line-height:1.5;
   border:1px solid #c5a55a;
 }
-.kg-tooltip .tt-title{font-weight:700;color:#c5a55a;font-size:13px;margin-bottom:4px;}
+.kg-tooltip .tt-title{font-weight:700;color:#c5a55a;font-size:13px;margin-bottom:4px;line-height:1.3;}
 .kg-tooltip .tt-type{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-bottom:6px;}
 .kg-tooltip .tt-chapter{color:#e0c887;margin-top:4px;font-size:11px;}
-.kg-tooltip .tt-desc{color:#ccc;font-size:11px;margin-top:4px;}
+.kg-tooltip .tt-desc{color:#ddd;font-size:11px;margin-top:4px;line-height:1.5;}
+.kg-tooltip .tt-keywords{color:#bbb;font-size:10px;margin-top:6px;line-height:1.6;}
+.kg-tooltip .tt-keywords span{color:#c5a55a;font-weight:600;margin-right:4px;}
+.kg-tooltip .tt-keywords em{display:inline-block;font-style:normal;color:#fff;background:rgba(197,165,90,0.25);padding:1px 6px;border-radius:8px;margin:1px 2px;font-size:10px;}
+.kg-tooltip .tt-link{
+  margin-top:10px;padding-top:8px;border-top:1px solid rgba(197,165,90,0.3);
+  color:#c5a55a;font-weight:700;font-size:11px;cursor:pointer;
+  transition:color .2s;
+}
+.kg-tooltip .tt-link:hover{color:#fff;text-decoration:underline;}
 .kg-legend{
   display:flex;
   gap:16px;
@@ -1795,21 +1804,102 @@ function kgShowTooltip(e,type,id){
   var node=kgNodeData.find(function(n){return n.type===type&&n.id===id;});
   if(!node)return;
 
+  var color=node.color||'#c5a55a';
   var typeLabels={
     course:'<span class="tt-type" style="background:#c5a55a;color:#1a2744">课程 Course</span>',
-    module:'<span class="tt-type" style="background:'+node.color+';color:#fff">模块 Module</span>',
-    lesson:'<span class="tt-type" style="background:'+node.color+';color:#fff">课时 Lesson</span>',
-    term:'<span class="tt-type" style="background:'+node.color+';color:#fff">术语 Term</span>'
+    module:'<span class="tt-type" style="background:'+color+';color:#fff">模块 Module</span>',
+    lesson:'<span class="tt-type" style="background:'+color+';color:#fff">课时 Lesson</span>',
+    term:'<span class="tt-type" style="background:'+color+';color:#fff">术语 Term</span>'
   };
 
+  var contentHtml='';
+  var learnLink='';
+
+  if(type==='course'){
+    contentHtml='<div class="tt-desc">48学时 · 12模块 · 48课时 · 96核心术语<br>三大写作模式：Informing / Predicting / Persuading<br>核心框架：IRAC / CREAC</div>';
+    learnLink='<div class="tt-link" onclick="goToPage(\'page-study\');kgHideTooltip();">📖 开始学习 →</div>';
+  }
+  else if(type==='module'){
+    var modId=node.id;
+    var mod=courseData.modules.find(function(m){return m.id===modId;});
+    var lectures=courseData.lectures.filter(function(l){return l.mod===modId;});
+    var terms=[];
+    lectures.forEach(function(l){
+      (l.keyPoints||[]).slice(0,2).forEach(function(k){
+        terms.push(k.split(':')[0].split('(')[0].trim());
+      });
+    });
+    contentHtml=
+      '<div class="tt-desc">'+(node.desc||'').substring(0,100)+(node.desc&&node.desc.length>100?'...':'')+'</div>'+
+      '<div class="tt-keywords"><span>核心术语：</span>'+terms.slice(0,6).map(function(t){return '<em>'+t+'</em>';}).join(' ')+'</div>';
+    learnLink='<div class="tt-link" onclick="kgGoToModule('+modId+');">📖 学习此模块 →</div>';
+  }
+  else if(type==='lesson'){
+    var hour=node.id;
+    var lec=courseData.lectures.find(function(l){return l.hour===hour;});
+    contentHtml=
+      '<div class="tt-desc">'+(node.desc||'')+'</div>'+
+      '<div class="tt-keywords"><span>学习目标：</span>'+(lec.objectives[0]||'').substring(0,50)+'...</div>'+
+      '<div class="tt-keywords"><span>核心知识点：</span>'+
+      (lec.keyPoints||[]).slice(0,3).map(function(k){return '<em>'+k.split(':')[0].split('(')[0].trim()+'</em>';}).join(' ')+
+      '</div>';
+    learnLink='<div class="tt-link" onclick="kgGoToLecture('+hour+');">📖 学习此课时 →</div>';
+  }
+  else if(type==='term'){
+    var lecHour=node.lecHour;
+    var termIdx=node.termIdx;
+    var lec=courseData.lectures.find(function(l){return l.hour===lecHour;});
+    var termText=(lec.keyPoints||[])[termIdx]||'';
+    var termMain=termText.split(':')[0].split('(')[0].trim();
+    var termDetail=termText.includes(':')?termText.split(':').slice(1).join(':').trim():termText;
+    contentHtml=
+      '<div class="tt-desc"><strong>'+termMain+'</strong></div>'+
+      '<div class="tt-desc">'+termDetail.substring(0,120)+(termDetail.length>120?'...':'')+'</div>'+
+      '<div class="tt-chapter">💡 知识点类型：专业术语 / 核心概念</div>';
+    learnLink='<div class="tt-link" onclick="kgGoToLecture('+lecHour+');">📖 在课时中学习 →</div>';
+  }
+
   tooltip.innerHTML=
-    typeLabels[type]||''+
+    (typeLabels[type]||'')+
     '<div class="tt-title">'+node.title+'</div>'+
     '<div class="tt-chapter">📍 所在章节：'+node.chapter+'</div>'+
-    (node.desc?'<div class="tt-desc">'+node.desc.substring(0,150)+(node.desc.length>150?'...':'')+'</div>':'');
+    contentHtml+
+    learnLink;
   tooltip.style.display='block';
-  tooltip.style.left=(e.clientX+15)+'px';
-  tooltip.style.top=(e.clientY+15)+'px';
+  tooltip.style.left=(e.clientX+18)+'px';
+  tooltip.style.top=(e.clientY+18)+'px';
+
+  var rect=tooltip.getBoundingClientRect();
+  if(rect.right>window.innerWidth-10){
+    tooltip.style.left=(e.clientX-rect.width-18)+'px';
+  }
+  if(rect.bottom>window.innerHeight-10){
+    tooltip.style.top=(e.clientY-rect.height-18)+'px';
+  }
+}
+
+function kgGoToModule(modId){
+  kgHideTooltip();
+  goToPage('page-study');
+  document.getElementById('moduleFilter').value=modId;
+  renderStudyContent();
+  setTimeout(function(){
+    document.getElementById('page-study').scrollIntoView({behavior:'smooth'});
+  },100);
+}
+
+function kgGoToLecture(hour){
+  kgHideTooltip();
+  goToPage('page-study');
+  var lec=courseData.lectures.find(function(l){return l.hour===hour;});
+  if(lec){
+    document.getElementById('moduleFilter').value=lec.mod;
+    renderStudyContent();
+  }
+  setTimeout(function(){
+    var item=document.querySelector('[data-hour="'+hour+'"]');
+    if(item)item.scrollIntoView({behavior:'smooth',block:'center'});
+  },200);
 }
 
 function kgHideTooltip(){
