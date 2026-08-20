@@ -357,18 +357,80 @@ h1,h2,h3,h4{font-family:'Georgia','Times New Roman',serif;}
   border-radius:var(--radius);
   box-shadow:var(--shadow);
   padding:20px;
-  overflow:auto;
+  overflow:hidden;
+  position:relative;
 }
+.kg-toolbar{
+  display:flex;
+  gap:8px;
+  margin-bottom:12px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.kg-toolbar button{
+  padding:6px 14px;
+  border:1px solid var(--border);
+  background:var(--card);
+  border-radius:6px;
+  cursor:pointer;
+  font-size:13px;
+  transition:all .15s;
+}
+.kg-toolbar button:hover{background:var(--navy);color:#fff;border-color:var(--navy);}
+.kg-toolbar .kg-info{margin-left:auto;font-size:12px;color:var(--text-light);}
+.kg-svg-wrap{
+  width:100%;
+  min-height:650px;
+  overflow:hidden;
+  position:relative;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#f8f9fb;
+  cursor:grab;
+}
+.kg-svg-wrap:active{cursor:grabbing;}
 .kg-svg{
   width:100%;
-  min-height:600px;
+  height:650px;
   display:block;
 }
 .kg-node{
   cursor:pointer;
-  transition:all .2s;
+  transition:opacity .2s;
 }
-.kg-node:hover circle{stroke-width:3;}
+.kg-node:hover{opacity:0.85;}
+.kg-node:hover circle{stroke-width:3;filter:drop-shadow(0 0 6px currentColor);}
+.kg-tooltip{
+  position:fixed;
+  pointer-events:none;
+  background:#1a2744;
+  color:#fff;
+  padding:10px 14px;
+  border-radius:8px;
+  font-size:12px;
+  max-width:320px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.3);
+  z-index:9999;
+  display:none;
+  line-height:1.5;
+  border:1px solid #c5a55a;
+}
+.kg-tooltip .tt-title{font-weight:700;color:#c5a55a;font-size:13px;margin-bottom:4px;}
+.kg-tooltip .tt-type{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-bottom:6px;}
+.kg-tooltip .tt-chapter{color:#e0c887;margin-top:4px;font-size:11px;}
+.kg-tooltip .tt-desc{color:#ccc;font-size:11px;margin-top:4px;}
+.kg-legend{
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-top:12px;
+  padding:10px 14px;
+  background:#f8f9fb;
+  border-radius:8px;
+  font-size:12px;
+}
+.kg-legend-item{display:flex;align-items:center;gap:6px;}
+.kg-legend-dot{width:14px;height:14px;border-radius:50%;display:inline-block;}
 .kg-detail{
   background:#f8f9fb;
   border-radius:8px;
@@ -956,14 +1018,25 @@ h1,h2,h3,h4{font-family:'Georgia','Times New Roman',serif;}
 <!-- ============ 知识图谱 ============ -->
 <div class="page" id="page-knowledge">
   <h2 class="page-title">🕸️ 知识图谱 Knowledge Graph</h2>
-  <p class="page-subtitle">法律英语写作知识体系可视化 · 点击节点查看详情</p>
+  <p class="page-subtitle">课程→模块→课时→术语 四级知识网络 · 悬停查看详情 · 点击展开内容</p>
   <div class="kg-container">
-    <svg class="kg-svg" id="kgSvg" viewBox="0 0 1000 700"></svg>
+    <div class="kg-toolbar">
+      <button onclick="kgZoom(1.2)">🔍+ 放大</button>
+      <button onclick="kgZoom(0.8)">🔍- 缩小</button>
+      <button onclick="kgReset()">↺ 重置</button>
+      <button onclick="kgToggleTerms()" id="kgTermsBtn">👁 显示/隐藏术语</button>
+      <span class="kg-info" id="kgInfo">四级网络 · 1课程 · 12模块 · 48课时 · 96术语</span>
+    </div>
+    <div class="kg-svg-wrap" id="kgSvgWrap">
+      <svg class="kg-svg" id="kgSvg" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="kg-legend" id="kgLegend"></div>
+    <div class="kg-detail" id="kgDetail">
+      <h4>👆 点击图谱节点查看知识点详情</h4>
+      <p>悬停任意节点可预览知识点及所在章节；点击节点查看完整详情。四级网络结构：课程（中心）→ 模块（12个）→ 课时（48个）→ 术语（96个核心术语）。</p>
+    </div>
   </div>
-  <div class="kg-detail" id="kgDetail">
-    <h4>👆 点击图谱节点查看知识点详情</h4>
-    <p>选择中心节点或任意分支节点，查看该知识领域的关键概念、学习要点与关联知识。</p>
-  </div>
+  <div class="kg-tooltip" id="kgTooltip"></div>
 </div>
 
 <!-- ============ 口语对话练习 ============ -->
@@ -1531,86 +1604,284 @@ function generatePlan(){
 }
 
 // ==================== 知识图谱 ====================
+var kgState={zoom:1,panX:0,panY:0,showTerms:true};
+var kgNodeData=[];
+
 function renderKnowledgeGraph(){
   const svg=document.getElementById('kgSvg');
-  const centerX=500,centerY=350;
-  const radius=220;
+  const cx=800,cy=600;
+  const modRadius=200;
+  const lecRadius=420;
+  const termRadius=560;
+  kgNodeData=[];
 
-  let html=`<defs>
-    <radialGradient id="centerGrad"><stop offset="0%" stop-color="#1a2744"/><stop offset="100%" stop-color="#2d4170"/></radialGradient>
-    <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15"/></filter>
-  </defs>`;
+  var typeColors={
+    'course':'#1a2744','module':'#2d4170','lesson':'#3498db','term':'#e8e8e8'
+  };
+  var typeBg={
+    'course':'#1a2744','module':'#2d4170','lesson':'#fff','term':'#fff'
+  };
 
-  // Center node
-  html+=`<g class="kg-node" onclick="showKGDetail('center')">
-    <circle cx="${centerX}" cy="${centerY}" r="60" fill="url(#centerGrad)" stroke="#c5a55a" stroke-width="3" filter="url(#shadow)"/>
-    <text x="${centerX}" y="${centerY-5}" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">法律英语</text>
-    <text x="${centerX}" y="${centerY+12}" text-anchor="middle" fill="#c5a55a" font-size="12">Legal Writing</text>
-  </g>`;
+  var html='<defs>'+
+    '<radialGradient id="centerGrad"><stop offset="0%" stop-color="#1a2744"/><stop offset="100%" stop-color="#2d4170"/></radialGradient>'+
+    '<radialGradient id="modGrad"><stop offset="0%" stop-color="#fff" stop-opacity="0.3"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>'+
+    '<filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15"/></filter>'+
+    '</defs>';
 
-  // Module nodes around center
-  courseData.modules.forEach((mod,i)=>{
-    const angle=(i/courseData.modules.length)*Math.PI*2-Math.PI/2;
-    const x=centerX+Math.cos(angle)*radius;
-    const y=centerY+Math.sin(angle)*radius;
-    const numNodes=courseData.lectures.filter(l=>l.mod===mod.id).length;
+  html+='<g id="kgContent">';
 
-    // Line from center to module
-    html+=`<line x1="${centerX}" y1="${centerY}" x2="${x}" y2="${y}" stroke="${mod.color}" stroke-width="2" opacity="0.4"/>`;
+  // ---- Level 1: Course (center) ----
+  html+='<g class="kg-node" onclick="showKGDetail(\'center\')" onmouseover="kgShowTooltip(event,\'course\',0)" onmouseout="kgHideTooltip()">'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="55" fill="url(#centerGrad)" stroke="#c5a55a" stroke-width="3" filter="url(#shadow)"/>'+
+    '<text x="'+cx+'" y="'+(cy-6)+'" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">法律英语写作</text>'+
+    '<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" fill="#c5a55a" font-size="11">Legal Writing</text>'+
+    '</g>';
+  kgNodeData.push({type:'course',id:0,title:'法律英语写作 Legal English Writing',chapter:'课程总览',desc:'48学时·12模块·48课时·96核心术语'});
+
+  // ---- Level 2 & 3 & 4 ----
+  courseData.modules.forEach(function(mod,i){
+    var angle=(i/courseData.modules.length)*Math.PI*2-Math.PI/2;
+    var mx=cx+Math.cos(angle)*modRadius;
+    var my=cy+Math.sin(angle)*modRadius;
+    var lectures=courseData.lectures.filter(function(l){return l.mod===mod.id});
+    var numLe=lectures.length;
+
+    // Line: center -> module
+    html+='<line x1="'+cx+'" y1="'+cy+'" x2="'+mx+'" y2="'+my+'" stroke="'+mod.color+'" stroke-width="2.5" opacity="0.4"/>';
 
     // Module node
-    html+=`<g class="kg-node" onclick="showKGDetail('mod${mod.id}')">
-      <circle cx="${x}" cy="${y}" r="42" fill="${mod.color}" stroke="#fff" stroke-width="2" filter="url(#shadow)" opacity="0.9"/>
-      <text x="${x}" y="${y-8}" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">M${mod.id}</text>
-      <text x="${x}" y="${y+6}" text-anchor="middle" fill="#fff" font-size="9">${mod.name.split(' ')[0]}</text>
-      <text x="${x}" y="${y+18}" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="8">${numNodes}h</text>
-    </g>`;
+    var modName=mod.name.split(' ')[0];
+    html+='<g class="kg-node" onclick="showKGDetail(\'mod'+mod.id+'\')" onmouseover="kgShowTooltip(event,\'module\','+mod.id+')" onmouseout="kgHideTooltip()">'+
+      '<circle cx="'+mx+'" cy="'+my+'" r="38" fill="'+mod.color+'" stroke="#fff" stroke-width="2" filter="url(#shadow)" opacity="0.92"/>'+
+      '<text x="'+mx+'" y="'+(my-7)+'" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">M'+mod.id+'</text>'+
+      '<text x="'+mx+'" y="'+(my+6)+'" text-anchor="middle" fill="#fff" font-size="8">'+modName.substring(0,8)+'</text>'+
+      '<text x="'+mx+'" y="'+(my+17)+'" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="7">'+numLe+'h</text>'+
+      '</g>';
+    kgNodeData.push({type:'module',id:mod.id,title:'M'+mod.id+' '+mod.name,chapter:'模块'+mod.id+' (Hour '+mod.hours+')',desc:mod.summary,color:mod.color});
 
-    // Sub-nodes for key concepts
-    const keyConcepts=mod.id<=6?courseData.lectures.filter(l=>l.mod===mod.id).slice(0,2):courseData.lectures.filter(l=>l.mod===mod.id).slice(0,2);
-    keyConcepts.forEach((lec,j)=>{
-      const subAngle=angle+(j-0.5)*0.25;
-      const subX=x+Math.cos(subAngle)*90;
-      const subY=y+Math.sin(subAngle)*90;
-      html+=`<line x1="${x}" y1="${y}" x2="${subX}" y2="${subY}" stroke="${mod.color}" stroke-width="1" opacity="0.3"/>`;
-      html+=`<g class="kg-node" onclick="showKGDetail('hour${lec.hour}')">
-        <circle cx="${subX}" cy="${subY}" r="22" fill="#fff" stroke="${mod.color}" stroke-width="2" filter="url(#shadow)"/>
-        <text x="${subX}" y="${subY+4}" text-anchor="middle" fill="${mod.color}" font-size="10" font-weight="600">H${lec.hour}</text>
-      </g>`;
+    // ---- Level 3: Lectures ----
+    var arcSpread=0.45;
+    lectures.forEach(function(lec,j){
+      var lecAngle;
+      if(numLe===1){lecAngle=angle;}
+      else{lecAngle=angle+((j/(numLe-1))-0.5)*arcSpread;}
+      var lx=cx+Math.cos(lecAngle)*lecRadius;
+      var ly=cy+Math.sin(lecAngle)*lecRadius;
+
+      // Line: module -> lecture
+      html+='<line x1="'+mx+'" y1="'+my+'" x2="'+lx+'" y2="'+ly+'" stroke="'+mod.color+'" stroke-width="1.2" opacity="0.3"/>';
+
+      // Lecture node
+      html+='<g class="kg-node" onclick="showKGDetail(\'hour'+lec.hour+'\')" onmouseover="kgShowTooltip(event,\'lesson\','+lec.hour+')" onmouseout="kgHideTooltip()">'+
+        '<circle cx="'+lx+'" cy="'+ly+'" r="18" fill="#fff" stroke="'+mod.color+'" stroke-width="2" filter="url(#shadow)"/>'+
+        '<text x="'+lx+'" y="'+(ly+4)+'" text-anchor="middle" fill="'+mod.color+'" font-size="10" font-weight="600">H'+lec.hour+'</text>'+
+        '</g>';
+      kgNodeData.push({type:'lesson',id:lec.hour,title:'Hour '+lec.hour+': '+lec.title,chapter:'模块'+mod.id+' · '+mod.name,desc:lec.cn,color:mod.color});
+
+      // ---- Level 4: Terms (2 per lecture) ----
+      if(kgState.showTerms&&lec.keyPoints&&lec.keyPoints.length>=2){
+        var terms=[lec.keyPoints[0],lec.keyPoints[1]];
+        terms.forEach(function(termStr,k){
+          var termAngle=lecAngle+(k===0?-0.06:0.06);
+          var tx=cx+Math.cos(termAngle)*termRadius;
+          var ty=cy+Math.sin(termAngle)*termRadius;
+
+          // Line: lecture -> term
+          html+='<line x1="'+lx+'" y1="'+ly+'" x2="'+tx+'" y2="'+ty+'" stroke="'+mod.color+'" stroke-width="0.8" opacity="0.2"/>';
+
+          var termShort=termStr.split(':')[0].split('(')[0].trim();
+          if(termShort.length>22){termShort=termShort.substring(0,20)+'..';}
+
+          var termId=lec.hour*10+k;
+          html+='<g class="kg-node kg-term" onclick="showKGDetail(\'term'+termId+'\')" onmouseover="kgShowTooltip(event,\'term\','+termId+')" onmouseout="kgHideTooltip()">'+
+            '<circle cx="'+tx+'" cy="'+ty+'" r="7" fill="'+mod.color+'" fill-opacity="0.25" stroke="'+mod.color+'" stroke-width="1.2"/>'+
+            '<text x="'+tx+'" y="'+(ty+2)+'" text-anchor="middle" fill="'+mod.color+'" font-size="6.5" font-weight="600">'+termShort.substring(0,12)+'</text>'+
+            '</g>';
+          kgNodeData.push({type:'term',id:termId,title:termStr,chapter:'Hour '+lec.hour+' · '+lec.title.substring(0,30),desc:lec.cn,color:mod.color,lecHour:lec.hour,termIdx:k});
+        });
+      }
     });
   });
 
+  html+='</g>';
   svg.innerHTML=html;
+
+  // Render legend
+  var legend=document.getElementById('kgLegend');
+  legend.innerHTML=
+    '<span class="kg-legend-item"><span class="kg-legend-dot" style="background:#1a2744"></span>课程 Course</span>'+
+    '<span class="kg-legend-item"><span class="kg-legend-dot" style="background:#2d4170"></span>模块 Module (12)</span>'+
+    '<span class="kg-legend-item"><span class="kg-legend-dot" style="background:#3498db"></span>课时 Lesson (48)</span>'+
+    '<span class="kg-legend-item"><span class="kg-legend-dot" style="background:#bbb"></span>术语 Term (96)</span>'+
+    '<span class="kg-legend-item" style="margin-left:auto;color:var(--text-light)">滚轮缩放 · 拖拽平移</span>';
+
+  // Setup zoom/pan
+  setupKgZoomPan();
+  updateKgInfo();
+}
+
+function setupKgZoomPan(){
+  var wrap=document.getElementById('kgSvgWrap');
+  var svg=document.getElementById('kgSvg');
+
+  wrap.onwheel=function(e){
+    e.preventDefault();
+    var delta=e.deltaY>0?0.9:1.1;
+    kgState.zoom*=delta;
+    kgState.zoom=Math.max(0.3,Math.min(4,kgState.zoom));
+    applyKgTransform();
+  };
+
+  var dragging=false,lastX=0,lastY=0;
+  wrap.onmousedown=function(e){
+    dragging=true;lastX=e.clientX;lastY=e.clientY;
+  };
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    kgState.panX+=(e.clientX-lastX);
+    kgState.panY+=(e.clientY-lastY);
+    lastX=e.clientX;lastY=e.clientY;
+    applyKgTransform();
+  });
+  document.addEventListener('mouseup',function(){dragging=false;});
+
+  // Touch support
+  var touchLastX=0,touchLastY=0;
+  wrap.ontouchstart=function(e){
+    if(e.touches.length===1){touchLastX=e.touches[0].clientX;touchLastY=e.touches[0].clientY;}
+  };
+  wrap.ontouchmove=function(e){
+    if(e.touches.length===1){
+      e.preventDefault();
+      kgState.panX+=(e.touches[0].clientX-touchLastX);
+      kgState.panY+=(e.touches[0].clientY-touchLastY);
+      touchLastX=e.touches[0].clientX;touchLastY=e.touches[0].clientY;
+      applyKgTransform();
+    }
+  };
+}
+
+function applyKgTransform(){
+  var content=document.getElementById('kgContent');
+  if(content){
+    content.setAttribute('transform','translate('+kgState.panX+','+kgState.panY+') scale('+kgState.zoom+')');
+  }
+}
+
+function kgZoom(factor){
+  kgState.zoom*=factor;
+  kgState.zoom=Math.max(0.3,Math.min(4,kgState.zoom));
+  applyKgTransform();
+}
+
+function kgReset(){
+  kgState.zoom=1;kgState.panX=0;kgState.panY=0;
+  applyKgTransform();
+}
+
+function kgToggleTerms(){
+  kgState.showTerms=!kgState.showTerms;
+  renderKnowledgeGraph();
+}
+
+function updateKgInfo(){
+  var info=document.getElementById('kgInfo');
+  var termCount=kgState.showTerms?96:0;
+  info.textContent='四级网络 · 1课程 · 12模块 · 48课时 · '+termCount+'术语 · 缩放:'+(kgState.zoom*100).toFixed(0)+'%';
+}
+
+function kgShowTooltip(e,type,id){
+  var tooltip=document.getElementById('kgTooltip');
+  var node=kgNodeData.find(function(n){return n.type===type&&n.id===id;});
+  if(!node)return;
+
+  var typeLabels={
+    course:'<span class="tt-type" style="background:#c5a55a;color:#1a2744">课程 Course</span>',
+    module:'<span class="tt-type" style="background:'+node.color+';color:#fff">模块 Module</span>',
+    lesson:'<span class="tt-type" style="background:'+node.color+';color:#fff">课时 Lesson</span>',
+    term:'<span class="tt-type" style="background:'+node.color+';color:#fff">术语 Term</span>'
+  };
+
+  tooltip.innerHTML=
+    typeLabels[type]||''+
+    '<div class="tt-title">'+node.title+'</div>'+
+    '<div class="tt-chapter">📍 所在章节：'+node.chapter+'</div>'+
+    (node.desc?'<div class="tt-desc">'+node.desc.substring(0,150)+(node.desc.length>150?'...':'')+'</div>':'');
+  tooltip.style.display='block';
+  tooltip.style.left=(e.clientX+15)+'px';
+  tooltip.style.top=(e.clientY+15)+'px';
+}
+
+function kgHideTooltip(){
+  document.getElementById('kgTooltip').style.display='none';
 }
 
 function showKGDetail(type){
-  const detail=document.getElementById('kgDetail');
+  var detail=document.getElementById('kgDetail');
   if(type==='center'){
-    detail.innerHTML=`<h4>⚖️ 法律英语写作 Legal English Writing</h4>
-    <p>本课程系统覆盖法律英语写作的全部核心领域，从写作基础到学术论文，从客观备忘录到说服性书状，从合同起草到职业伦理。48学时12模块构成完整的法律英语写作训练体系。</p>
-    <p><strong>核心三模式：</strong>Informing（告知）/ Predicting（预测）/ Persuading（说服）</p>
-    <p><strong>核心分析框架：</strong>IRAC / CREAC</p>
-    <p><strong>核心写作流程：</strong>Planning → Drafting → Revising → Editing</p>`;
+    detail.innerHTML='<h4>⚖️ 法律英语写作 Legal English Writing</h4>'+
+    '<p>本课程系统覆盖法律英语写作的全部核心领域，从写作基础到学术论文，从客观备忘录到说服性书状，从合同起草到职业伦理。48学时12模块构成完整的法律英语写作训练体系。</p>'+
+    '<p><strong>核心三模式：</strong>Informing（告知）/ Predicting（预测）/ Persuading（说服）</p>'+
+    '<p><strong>核心分析框架：</strong>IRAC / CREAC</p>'+
+    '<p><strong>核心写作流程：</strong>Planning → Drafting → Revising → Editing</p>'+
+    '<p><strong>四级知识网络：</strong>课程 → 12模块 → 48课时 → 96核心术语</p>';
   }else if(type.startsWith('mod')){
-    const modId=parseInt(type.replace('mod',''));
-    const mod=courseData.modules.find(m=>m.id===modId);
-    const lectures=courseData.lectures.filter(l=>l.mod===modId);
-    detail.innerHTML=`<h4>📘 模块${mod.id}：${mod.name}</h4>
-    <p>${mod.summary}</p>
-    <p><strong>学时范围：</strong>Hour ${mod.hours}（${lectures.length}讲）</p>
-    <p><strong>关键学时：</strong></p>
-    <ul style="margin-left:20px;font-size:13px;">
-      ${lectures.map(l=>`<li>Hour ${l.hour}: ${l.title}</li>`).join('')}
-    </ul>`;
+    var modId=parseInt(type.replace('mod',''));
+    var mod=courseData.modules.find(function(m){return m.id===modId;});
+    var lectures=courseData.lectures.filter(function(l){return l.mod===modId;});
+    detail.innerHTML='<h4>📘 模块'+mod.id+'：'+mod.name+'</h4>'+
+    '<p>'+mod.summary+'</p>'+
+    '<p><strong>学时范围：</strong>Hour '+mod.hours+'（'+lectures.length+'讲）</p>'+
+    '<p><strong>核心术语：</strong></p>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+
+      lectures.map(function(l){
+        var terms=(l.keyPoints||[]).slice(0,2).map(function(k){return k.split(':')[0].split('(')[0].trim();});
+        return terms.map(function(t){return '<span style="background:'+mod.color+'22;color:'+mod.color+';padding:3px 10px;border-radius:12px;font-size:11px;border:1px solid '+mod.color+'55">'+t+'</span>';}).join('');
+      }).join('')+
+    '</div>'+
+    '<p><strong>课时列表：</strong></p>'+
+    '<ul style="margin-left:20px;font-size:13px;">'+
+      lectures.map(function(l){return '<li>Hour '+l.hour+': '+l.title+'</li>';}).join('')+
+    '</ul>';
   }else if(type.startsWith('hour')){
-    const hour=parseInt(type.replace('hour',''));
-    const l=courseData.lectures.find(x=>x.hour===hour);
-    detail.innerHTML=`<h4>📌 Hour ${l.hour}：${l.title}</h4>
-    <p style="color:var(--text-light);">${l.cn}</p>
-    <p><strong>学习目标：</strong></p>
-    <ul style="margin-left:20px;font-size:13px;">${l.objectives.map(o=>`<li>${o}</li>`).join('')}</ul>
-    <p><strong>核心知识点：</strong></p>
-    <ul style="margin-left:20px;font-size:13px;">${l.keyPoints.map(k=>`<li>${k}</li>`).join('')}</ul>`;
+    var hour=parseInt(type.replace('hour',''));
+    var l=courseData.lectures.find(function(x){return x.hour===hour;});
+    var mod=courseData.modules.find(function(m){return m.id===l.mod;});
+    detail.innerHTML='<h4>📌 Hour '+l.hour+'：'+l.title+'</h4>'+
+    '<p style="color:var(--text-light);">'+l.cn+'</p>'+
+    '<p><strong>所属模块：</strong>M'+mod.id+' '+mod.name+'</p>'+
+    '<p><strong>学习目标：</strong></p>'+
+    '<ul style="margin-left:20px;font-size:13px;">'+l.objectives.map(function(o){return '<li>'+o+'</li>';}).join('')+'</ul>'+
+    '<p><strong>核心知识点（术语）：</strong></p>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+
+      l.keyPoints.map(function(k){
+        var short=k.split(':')[0].split('(')[0].trim();
+        return '<span style="background:'+mod.color+'22;color:'+mod.color+';padding:4px 10px;border-radius:12px;font-size:11px;border:1px solid '+mod.color+'55" title="'+k+'">'+short+'</span>';
+      }).join('')+
+    '</div>'+
+    '<p style="margin-top:8px;"><strong>阅读材料：</strong>'+l.readings.join(' · ')+'</p>';
+  }else if(type.startsWith('term')){
+    var termId=parseInt(type.replace('term',''));
+    var lecHour=Math.floor(termId/10);
+    var termIdx=termId%10;
+    var l=courseData.lectures.find(function(x){return x.hour===lecHour;});
+    var mod=courseData.modules.find(function(m){return m.id===l.mod;});
+    var termText=l.keyPoints[termIdx]||'';
+    var termMain=termText.split(':')[0].split('(')[0].trim();
+    var termDetail=termText.includes(':')?termText.split(':').slice(1).join(':').trim():'';
+    detail.innerHTML='<h4>🔖 术语：'+termMain+'</h4>'+
+    '<p><strong>所在课时：</strong>Hour '+l.hour+' · '+l.title+'</p>'+
+    '<p><strong>所属模块：</strong>M'+mod.id+' '+mod.name+'</p>'+
+    (termDetail?'<p><strong>详细说明：</strong>'+termDetail+'</p>':'')+
+    '<p><strong>课时中文：</strong>'+l.cn+'</p>'+
+    '<p><strong>同课时其他术语：</strong></p>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+
+      l.keyPoints.map(function(k,i){
+        var short=k.split(':')[0].split('(')[0].trim();
+        var highlight=i===termIdx;
+        return '<span style="background:'+(highlight?mod.color:mod.color+'22')+';color:'+(highlight?'#fff':mod.color)+';padding:4px 10px;border-radius:12px;font-size:11px;border:1px solid '+mod.color+'55" title="'+k+'">'+short+'</span>';
+      }).join('')+
+    '</div>';
   }
 }
 
